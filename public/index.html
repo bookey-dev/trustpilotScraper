@@ -126,8 +126,8 @@
         <option value="last12months">最近 12 个月</option>
       </select>
       <button class="btn-primary" id="scrapeBtn" onclick="startScrape()">开始抓取</button>
-      <button class="btn-secondary" id="csvBtn" onclick="downloadCSV()" style="display:none">下载 CSV</button>
-      <button class="btn-secondary" id="jsonBtn" onclick="downloadJSON()" style="display:none">下载 JSON</button>
+      <button class="btn-secondary" id="csvBtn" onclick="downloadCSV()" style="display:none">下载全部 CSV</button>
+      <button class="btn-secondary" id="jsonBtn" onclick="downloadJSON()" style="display:none">下载全部 JSON</button>
     </div>
 
     <div id="loading" class="loading hidden">
@@ -157,6 +157,33 @@
 
     function sanitizeFilename(name) {
       return String(name || 'trustpilot_export').replace(/[^a-zA-Z0-9._-]+/g, '_');
+    }
+
+    function getSuccessfulResults() {
+      return allResults.filter((item) => item && !item.error);
+    }
+
+    function getExportBaseName(successfulResults) {
+      if (successfulResults.length === 1) {
+        return sanitizeFilename(successfulResults[0].businessInfo?.domain || successfulResults[0].company);
+      }
+      return `trustpilot_export_${successfulResults.length}_sites`;
+    }
+
+    function buildCombinedCSVRows(successfulResults) {
+      return successfulResults.flatMap((result) => {
+        const businessInfo = result.businessInfo || {};
+        return (result.reviews || []).map((review) => ({
+          companyName: businessInfo.name || '',
+          companyDomain: businessInfo.domain || result.company || '',
+          trustScore: businessInfo.trustScore ?? '',
+          stars: businessInfo.stars ?? '',
+          totalCompanyReviews: businessInfo.numberOfReviews ?? '',
+          scrapedReviews: result.totalReviews ?? '',
+          dateFilter: result.dateFilter || '',
+          ...review
+        }));
+      });
     }
 
     function dateFilterLabel(value) {
@@ -280,14 +307,15 @@
         container.innerHTML = tabsHtml;
       }
 
+      const successfulResults = getSuccessfulResults();
+      document.getElementById('csvBtn').style.display = successfulResults.length ? '' : 'none';
+      document.getElementById('jsonBtn').style.display = successfulResults.length ? '' : 'none';
       const data = allResults[currentCompanyIndex];
       if (data.error) {
         container.innerHTML += `<div class="error">抓取失败: ${data.error}</div>`;
         return;
       }
 
-      document.getElementById('csvBtn').style.display = '';
-      document.getElementById('jsonBtn').style.display = '';
       const bi = data.businessInfo;
       const sd = data.starDistribution;
       const ld = data.languageDistribution;
@@ -428,19 +456,25 @@
     }
 
     function downloadCSV() {
-      const data = allResults[currentCompanyIndex];
-      if (!data || data.error) return;
-      const company = sanitizeFilename(data.businessInfo.domain);
-      const csv = toCSV(data.reviews || []);
-      triggerDownload(csv, `${company}.csv`, 'text/csv;charset=utf-8;');
+      const successfulResults = getSuccessfulResults();
+      if (!successfulResults.length) return;
+      const filename = getExportBaseName(successfulResults);
+      const rows = buildCombinedCSVRows(successfulResults);
+      const csv = toCSV(rows);
+      triggerDownload(csv, `${filename}.csv`, 'text/csv;charset=utf-8;');
     }
 
     function downloadJSON() {
-      const data = allResults[currentCompanyIndex];
-      if (!data || data.error) return;
-      const company = sanitizeFilename(data.businessInfo.domain);
-      const json = JSON.stringify(data, null, 2);
-      triggerDownload(json, `${company}.json`, 'application/json;charset=utf-8;');
+      const successfulResults = getSuccessfulResults();
+      if (!successfulResults.length) return;
+      const filename = getExportBaseName(successfulResults);
+      const payload = successfulResults.length === 1 ? successfulResults[0] : {
+        exportedAt: new Date().toISOString(),
+        totalSites: successfulResults.length,
+        sites: successfulResults
+      };
+      const json = JSON.stringify(payload, null, 2);
+      triggerDownload(json, `${filename}.json`, 'application/json;charset=utf-8;');
     }
   </script>
 </body>
