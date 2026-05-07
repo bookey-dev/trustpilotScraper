@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trustpilot Scraper</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    h1 { text-align: center; margin: 20px 0 30px; font-size: 28px; color: #00b67a; }
+
+    /* 搜索栏 */
+    .search-bar { display: flex; gap: 10px; margin-bottom: 30px; flex-wrap: wrap; }
+    .search-bar input { flex: 1; min-width: 200px; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px; font-size: 15px; outline: none; transition: border-color 0.2s; }
+    .search-bar input:focus { border-color: #00b67a; }
+    .search-bar select { padding: 12px 36px 12px 16px; border: 2px solid #ddd; border-radius: 8px; font-size: 15px; outline: none; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23666' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 12px center; -webkit-appearance: none; -moz-appearance: none; appearance: none; cursor: pointer; transition: border-color 0.2s; }
+    .search-bar select:focus { border-color: #00b67a; }
+    .search-bar button { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 600; transition: opacity 0.2s; }
+    .btn-primary { background: #00b67a; color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: #fff; color: #333; border: 2px solid #ddd !important; }
+    .btn-secondary:hover { border-color: #00b67a !important; }
+
+    /* 加载状态 */
+    .loading { text-align: center; padding: 60px 20px; color: #888; font-size: 16px; }
+    .spinner { display: inline-block; width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: #00b67a; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 公司概览卡片 */
+    .overview-card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .company-header { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+    .company-name { font-size: 24px; font-weight: 700; }
+    .company-domain { color: #888; font-size: 14px; }
+    .trust-score { display: flex; align-items: center; gap: 8px; }
+    .trust-score .score { font-size: 36px; font-weight: 700; color: #00b67a; }
+    .trust-score .max { font-size: 18px; color: #888; }
+    .stars-display { color: #00b67a; font-size: 22px; letter-spacing: 2px; }
+    .meta-info { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 10px; }
+    .meta-item { font-size: 14px; color: #666; }
+    .meta-item strong { color: #333; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+    .badge-green { background: #e6f9f0; color: #00b67a; }
+    .badge-gray { background: #f0f0f0; color: #888; }
+
+    /* 统计网格 */
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+    @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr; } }
+    .stat-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .stat-card h3 { font-size: 15px; color: #888; margin-bottom: 14px; }
+
+    /* 星级分布条 */
+    .star-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .star-label { width: 40px; font-size: 14px; font-weight: 600; text-align: right; }
+    .star-bar-bg { flex: 1; height: 22px; background: #f0f0f0; border-radius: 4px; overflow: hidden; }
+    .star-bar { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+    .star-5 { background: #00b67a; }
+    .star-4 { background: #73cf11; }
+    .star-3 { background: #ffce00; }
+    .star-2 { background: #ff8622; }
+    .star-1 { background: #ff3722; }
+    .star-count { width: 80px; font-size: 13px; color: #666; }
+
+    /* 语言分布 */
+    .lang-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .lang-tag { padding: 4px 12px; background: #f0f2f5; border-radius: 20px; font-size: 13px; }
+    .lang-tag .count { font-weight: 600; color: #00b67a; }
+
+    /* AI 摘要 */
+    .ai-summary { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .ai-summary h3 { font-size: 15px; color: #888; margin-bottom: 12px; }
+    .ai-summary p { font-size: 14px; line-height: 1.7; color: #555; }
+    .topic-list { margin-top: 16px; }
+    .topic-item { padding: 12px; background: #f9fafb; border-radius: 8px; margin-bottom: 8px; }
+    .topic-name { font-weight: 600; font-size: 14px; color: #333; margin-bottom: 4px; text-transform: capitalize; }
+    .topic-text { font-size: 13px; color: #666; line-height: 1.6; }
+
+    /* 评论列表 */
+    .reviews-section { margin-top: 20px; }
+    .reviews-section h3 { font-size: 18px; margin-bottom: 16px; }
+    .review-card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .review-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+    .review-stars { font-size: 16px; letter-spacing: 1px; }
+    .review-date { font-size: 13px; color: #888; }
+    .review-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+    .review-text { font-size: 14px; color: #555; line-height: 1.6; margin-bottom: 8px; }
+    .review-footer { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #888; flex-wrap: wrap; gap: 6px; }
+    .review-user { display: flex; align-items: center; gap: 8px; }
+    .review-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+    .review-avatar-placeholder { width: 28px; height: 28px; border-radius: 50%; background: #e0e0e0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: #888; }
+    .review-reply { background: #f9fafb; border-left: 3px solid #00b67a; padding: 12px; margin-top: 10px; border-radius: 0 8px 8px 0; }
+    .review-reply .reply-label { font-size: 12px; font-weight: 600; color: #00b67a; margin-bottom: 4px; }
+    .review-reply .reply-text { font-size: 13px; color: #555; line-height: 1.5; }
+    .verified-badge { color: #00b67a; font-size: 12px; font-weight: 600; }
+
+    /* 分页 */
+    .pagination { display: flex; justify-content: center; gap: 8px; margin: 24px 0; flex-wrap: wrap; }
+    .pagination button { padding: 8px 14px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; }
+    .pagination button.active { background: #00b67a; color: #fff; border-color: #00b67a; }
+    .pagination button:hover:not(.active) { border-color: #00b67a; }
+
+    .error { text-align: center; padding: 40px; color: #ff3722; font-size: 16px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Trustpilot Scraper</h1>
+
+    <div class="search-bar">
+      <input type="text" id="companyInput" placeholder="输入公司域名，多个用逗号分隔，如: www.amazon.com, www.ebay.com" value="www.velliavey.eu,www.velliavey.ca,www.velliavey.com.au,www.velliavey.uk,www.velliavey.com">
+      <select id="maxPages">
+        <option value="1">1 页</option>
+        <option value="3">3 页</option>
+        <option value="5" selected>5 页</option>
+        <option value="10">10 页</option>
+        <option value="20">20 页</option>
+        <option value="0">全部</option>
+      </select>
+      <select id="dateFilter">
+        <option value="all" selected>全部时间</option>
+        <option value="last30days">最近 30 天</option>
+        <option value="last3months">最近 3 个月</option>
+        <option value="last6months">最近 6 个月</option>
+        <option value="last12months">最近 12 个月</option>
+      </select>
+      <button class="btn-primary" id="scrapeBtn" onclick="startScrape()">开始抓取</button>
+      <button class="btn-secondary" id="csvBtn" onclick="downloadCSV()" style="display:none">下载 CSV</button>
+      <button class="btn-secondary" id="jsonBtn" onclick="downloadJSON()" style="display:none">下载 JSON</button>
+    </div>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <div id="loadingText">正在抓取数据...</div>
+    </div>
+
+    <div id="error" class="error hidden"></div>
+    <div id="results"></div>
+  </div>
+
+  <script>
+    let allResults = [];
+    let currentCompanyIndex = 0;
+    const REVIEWS_PER_PAGE = 20;
+    const MAX_CONCURRENT_COMPANIES = 2;
+    let reviewPages = {};
+
+    function starsHtml(rating) {
+      return '<span class="stars-display">' + '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating)) + '</span>';
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return '';
+      return new Date(dateStr).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    }
+
+    function sanitizeFilename(name) {
+      return String(name || 'trustpilot_export').replace(/[^a-zA-Z0-9._-]+/g, '_');
+    }
+
+    function dateFilterLabel(value) {
+      const labels = {
+        all: '全部时间',
+        last30days: '最近 30 天',
+        last3months: '最近 3 个月',
+        last6months: '最近 6 个月',
+        last12months: '最近 12 个月'
+      };
+      return labels[value] || value || '全部时间';
+    }
+
+    function toCSV(rows) {
+      if (!rows.length) return '';
+      const headers = Object.keys(rows[0]);
+      const escapeCell = (value) => {
+        if (value === null || value === undefined) return '';
+        const str = String(value).replace(/"/g, '""');
+        return /[",\n]/.test(str) ? `"${str}"` : str;
+      };
+      const csvRows = rows.map((row) => headers.map((header) => escapeCell(row[header])).join(','));
+      return [headers.join(','), ...csvRows].join('\n');
+    }
+
+    function triggerDownload(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    async function runConcurrentTasks(items, limit, worker, onProgress) {
+      const results = new Array(items.length);
+      let nextIndex = 0;
+      let completed = 0;
+
+      async function runner() {
+        while (nextIndex < items.length) {
+          const currentIndex = nextIndex++;
+          results[currentIndex] = await worker(items[currentIndex], currentIndex);
+          completed += 1;
+          if (onProgress) onProgress(completed, items.length, items[currentIndex]);
+        }
+      }
+
+      const runnerCount = Math.min(limit, items.length);
+      await Promise.all(Array.from({ length: runnerCount }, () => runner()));
+      return results;
+    }
+
+    async function startScrape() {
+      const input = document.getElementById('companyInput').value.trim();
+      if (!input) return;
+
+      const companies = input.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+      const maxPages = document.getElementById('maxPages').value;
+      const dateFilter = document.getElementById('dateFilter').value;
+
+      document.getElementById('scrapeBtn').disabled = true;
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('error').classList.add('hidden');
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('csvBtn').style.display = 'none';
+      document.getElementById('jsonBtn').style.display = 'none';
+      allResults = [];
+      reviewPages = {};
+      currentCompanyIndex = 0;
+
+      const concurrency = Math.min(MAX_CONCURRENT_COMPANIES, companies.length);
+      document.getElementById('loadingText').textContent = `正在抓取 0/${companies.length}，并发 ${concurrency} 个，时间 ${dateFilterLabel(dateFilter)}...`;
+
+      allResults = await runConcurrentTasks(
+        companies,
+        concurrency,
+        async (company) => {
+          document.getElementById('loadingText').textContent = `正在抓取 ${company}... 当前并发 ${concurrency} 个，时间 ${dateFilterLabel(dateFilter)}`;
+          try {
+            const res = await fetch(`/api/scrape?company=${encodeURIComponent(company)}&maxPages=${maxPages}&date=${encodeURIComponent(dateFilter)}`);
+            if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.error || `HTTP ${res.status}`);
+            }
+            return await res.json();
+          } catch (err) {
+            return { error: err.message, company };
+          }
+        },
+        (completed, total, company) => {
+          document.getElementById('loadingText').textContent = `已完成 ${completed}/${total}: ${company}，时间 ${dateFilterLabel(dateFilter)}`;
+        }
+      );
+
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('scrapeBtn').disabled = false;
+      renderResults();
+    }
+
+    function renderResults() {
+      const container = document.getElementById('results');
+      container.innerHTML = '';
+
+      if (allResults.length === 0) return;
+
+      // 多公司时显示 tab 切换
+      if (allResults.length > 1) {
+        let tabsHtml = '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">';
+        allResults.forEach((r, i) => {
+          const name = r.error ? `${r.company} (失败)` : r.businessInfo.name;
+          const isActive = i === currentCompanyIndex;
+          const cls = isActive ? 'btn-primary' : 'btn-secondary';
+          const border = isActive ? 'border-color:#00b67a;' : '';
+          tabsHtml += `<button class="${cls}" style="padding:8px 16px;border-radius:8px;font-size:14px;cursor:pointer;border:2px solid #ddd;${border}" onclick="switchTab(${i})">${name}</button>`;
+        });
+        tabsHtml += '</div>';
+        container.innerHTML = tabsHtml;
+      }
+
+      const data = allResults[currentCompanyIndex];
+      if (data.error) {
+        container.innerHTML += `<div class="error">抓取失败: ${data.error}</div>`;
+        return;
+      }
+
+      document.getElementById('csvBtn').style.display = '';
+      document.getElementById('jsonBtn').style.display = '';
+      const bi = data.businessInfo;
+      const sd = data.starDistribution;
+      const ld = data.languageDistribution;
+
+      // 公司概览
+      const total = sd ? sd['总计'] : bi.numberOfReviews;
+      container.innerHTML += `
+        <div class="overview-card">
+          <div class="company-header">
+            <div>
+              <div class="company-name">${bi.name}</div>
+              <div class="company-domain">${bi.domain}</div>
+            </div>
+            <div class="trust-score">
+              <span class="score">${bi.trustScore}</span><span class="max">/ 5</span>
+            </div>
+            <div>${starsHtml(bi.stars)}</div>
+          </div>
+          <div class="meta-info">
+            <div class="meta-item"><strong>${bi.numberOfReviews.toLocaleString()}</strong> 条评论</div>
+            <div class="meta-item"><strong>${data.totalReviews}</strong> 条已抓取</div>
+            <div class="meta-item"><strong>时间范围:</strong> ${dateFilterLabel(data.dateFilter)}</div>
+            ${bi.websiteUrl ? `<div class="meta-item"><a href="${bi.websiteUrl}" target="_blank">${bi.websiteUrl}</a></div>` : ''}
+            ${bi.address ? `<div class="meta-item">${bi.address}</div>` : ''}
+            <div class="meta-item"><span class="badge ${bi.isClaimed ? 'badge-green' : 'badge-gray'}">${bi.isClaimed ? '已认领' : '未认领'}</span></div>
+            ${bi.categories?.length ? `<div class="meta-item">${bi.categories.join(' / ')}</div>` : ''}
+          </div>
+        </div>
+      `;
+
+      // 星级 + 语言
+      let statsHtml = '<div class="stats-grid">';
+      if (sd) {
+        const entries = [['5 星', sd['5 星'], 'star-5'], ['4 星', sd['4 星'], 'star-4'], ['3 星', sd['3 星'], 'star-3'], ['2 星', sd['2 星'], 'star-2'], ['1 星', sd['1 星'], 'star-1']];
+        statsHtml += '<div class="stat-card"><h3>星级分布</h3>';
+        entries.forEach(([label, count, cls]) => {
+          const pct = ((count / total) * 100).toFixed(1);
+          statsHtml += `<div class="star-row">
+            <span class="star-label">${label}</span>
+            <div class="star-bar-bg"><div class="star-bar ${cls}" style="width:${pct}%"></div></div>
+            <span class="star-count">${count.toLocaleString()} (${pct}%)</span>
+          </div>`;
+        });
+        statsHtml += '</div>';
+      }
+      if (ld?.length) {
+        statsHtml += '<div class="stat-card"><h3>语言分布</h3><div class="lang-list">';
+        ld.forEach(l => {
+          statsHtml += `<span class="lang-tag">${l.language} <span class="count">${l.count.toLocaleString()}</span></span>`;
+        });
+        statsHtml += '</div></div>';
+      }
+      statsHtml += '</div>';
+      container.innerHTML += statsHtml;
+
+      // AI 摘要
+      const ov = data.overviewData;
+      if (ov?.aiSummary || ov?.topicSummaries?.length) {
+        let aiHtml = '<div class="ai-summary"><h3>AI 评论摘要</h3>';
+        if (ov.aiSummary) {
+          const text = typeof ov.aiSummary === 'string' ? ov.aiSummary : (ov.aiSummary.text || JSON.stringify(ov.aiSummary));
+          aiHtml += `<p>${text}</p>`;
+        }
+        if (ov.topicSummaries?.length) {
+          aiHtml += '<div class="topic-list">';
+          ov.topicSummaries.forEach(t => {
+            aiHtml += `<div class="topic-item"><div class="topic-name">${t.topic}</div><div class="topic-text">${t.summary}</div></div>`;
+          });
+          aiHtml += '</div>';
+        }
+        aiHtml += '</div>';
+        container.innerHTML += aiHtml;
+      }
+
+      // 评论列表
+      const key = currentCompanyIndex;
+      if (!reviewPages[key]) reviewPages[key] = 1;
+      const reviews = data.reviews;
+      const totalReviewPages = Math.ceil(reviews.length / REVIEWS_PER_PAGE);
+      const page = reviewPages[key];
+      const start = (page - 1) * REVIEWS_PER_PAGE;
+      const pageReviews = reviews.slice(start, start + REVIEWS_PER_PAGE);
+
+      let revHtml = `<div class="reviews-section"><h3>评论详情 (${reviews.length} 条)</h3>`;
+      pageReviews.forEach(r => {
+        revHtml += `<div class="review-card">
+          <div class="review-header">
+            <div>
+              <span class="review-stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>
+              ${r.isVerified ? '<span class="verified-badge">已验证</span>' : ''}
+            </div>
+            <span class="review-date">${formatDate(r.publishedDate)}</span>
+          </div>
+          <div class="review-title">${r.title || ''}</div>
+          <div class="review-text">${r.text || ''}</div>
+          <div class="review-footer">
+            <div class="review-user">
+              ${r.consumerAvatar && r.consumerAvatar.startsWith('http')
+                ? `<img class="review-avatar" src="${r.consumerAvatar}" alt="">`
+                : `<div class="review-avatar-placeholder">${(r.consumerName || '?')[0].toUpperCase()}</div>`}
+              <span>${r.consumerName || '匿名'}${r.consumerCountry ? ' (' + r.consumerCountry + ')' : ''}</span>
+            </div>
+            <span>${r.source || ''}</span>
+          </div>
+          ${r.replyText ? `<div class="review-reply"><div class="reply-label">商家回复 (${formatDate(r.replyDate)})</div><div class="reply-text">${r.replyText}</div></div>` : ''}
+        </div>`;
+      });
+
+      // 分页
+      if (totalReviewPages > 1) {
+        revHtml += '<div class="pagination">';
+        if (page > 1) revHtml += `<button onclick="goReviewPage(${page - 1})">上一页</button>`;
+        const maxShow = 7;
+        let startP = Math.max(1, page - 3);
+        let endP = Math.min(totalReviewPages, startP + maxShow - 1);
+        startP = Math.max(1, endP - maxShow + 1);
+        for (let p = startP; p <= endP; p++) {
+          revHtml += `<button class="${p === page ? 'active' : ''}" onclick="goReviewPage(${p})">${p}</button>`;
+        }
+        if (page < totalReviewPages) revHtml += `<button onclick="goReviewPage(${page + 1})">下一页</button>`;
+        revHtml += '</div>';
+      }
+
+      revHtml += '</div>';
+      container.innerHTML += revHtml;
+    }
+
+    function switchTab(i) {
+      currentCompanyIndex = i;
+      renderResults();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function goReviewPage(p) {
+      reviewPages[currentCompanyIndex] = p;
+      renderResults();
+      window.scrollTo({ top: document.querySelector('.reviews-section').offsetTop - 20, behavior: 'smooth' });
+    }
+
+    function downloadCSV() {
+      const data = allResults[currentCompanyIndex];
+      if (!data || data.error) return;
+      const company = sanitizeFilename(data.businessInfo.domain);
+      const csv = toCSV(data.reviews || []);
+      triggerDownload(csv, `${company}.csv`, 'text/csv;charset=utf-8;');
+    }
+
+    function downloadJSON() {
+      const data = allResults[currentCompanyIndex];
+      if (!data || data.error) return;
+      const company = sanitizeFilename(data.businessInfo.domain);
+      const json = JSON.stringify(data, null, 2);
+      triggerDownload(json, `${company}.json`, 'application/json;charset=utf-8;');
+    }
+  </script>
+</body>
+</html>
