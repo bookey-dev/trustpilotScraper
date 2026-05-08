@@ -623,7 +623,7 @@
       errorEl.classList.add('hidden');
 
       try {
-        const res = await fetch('/api/import/batch', {
+        const res = await fetch('https://cms.velliavey.com/prod-api/trustpilot_data/batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(rows)
