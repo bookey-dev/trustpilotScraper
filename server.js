@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const fetch = require("node-fetch");
 const { scrapeData, toCSV } = require("./scraper");
 
 const app = express();
@@ -7,9 +8,10 @@ const PORT = process.env.PORT || 4008;
 const SCRAPE_CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_PAGES = 3;
 const DEFAULT_DATE_FILTER = "last30days";
+const CMS_BATCH_URL = process.env.CMS_BATCH_URL || "https://cms.velliavey.com/prod-api/trustpilot_data/batch";
 const scrapeCache = new Map();
 
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.json({ limit: "10mb" }));
 
 function normalizeStarFilters(starFilters) {
   const values = Array.isArray(starFilters)
@@ -109,6 +111,47 @@ app.get("/api/download/json", async (req, res) => {
     res.status(500).json({ error: `导出失败: ${err.message}` });
   }
 });
+
+app.post("/api/import/batch", async (req, res) => {
+  const trustpilotDatas = Array.isArray(req.body) ? req.body : [];
+
+  if (!trustpilotDatas.length) {
+    return res.status(400).json({ error: "没有可导入的评论数据" });
+  }
+
+  try {
+    const response = await fetch(CMS_BATCH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(trustpilotDatas),
+    });
+    const text = await response.text();
+    let payload;
+
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch (_) {
+      payload = { raw: text };
+    }
+
+    if (!response.ok || payload?.success === false || payload?.failed === true) {
+      return res.status(response.ok ? 502 : response.status).json({
+        error: payload?.message || payload?.msg || `导入失败: HTTP ${response.status}`,
+        upstream: payload,
+      });
+    }
+
+    res.json({
+      success: true,
+      totalRows: trustpilotDatas.length,
+      upstream: payload,
+    });
+  } catch (err) {
+    res.status(500).json({ error: `导入失败: ${err.message}` });
+  }
+});
+
+app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, () => {
   console.log(`\n🚀 Trustpilot Scraper 已启动: http://localhost:${PORT}\n`);

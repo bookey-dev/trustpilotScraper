@@ -161,7 +161,6 @@
     let currentCompanyIndex = 0;
     const REVIEWS_PER_PAGE = 20;
     const MAX_CONCURRENT_COMPANIES = 2;
-    const CMS_BATCH_URL = 'https://cms.velliavey.com/stage-api/trustpilot_data/batch';
     let reviewPages = {};
 
     function starsHtml(rating) {
@@ -198,18 +197,25 @@
       return Number.isFinite(number) ? number : fallback;
     }
 
-    function getFallbackRating(data) {
-      const scrapedAverageRating = Number(data.scrapedAverageRating);
-      if (Number.isFinite(scrapedAverageRating) && scrapedAverageRating > 0) return scrapedAverageRating;
-
-      const ratings = (data.reviews || [])
+    function getReviewAverageRating(reviews) {
+      const ratings = (reviews || [])
         .map((review) => Number(review.rating))
         .filter((rating) => Number.isFinite(rating) && rating >= 1 && rating <= 5);
       if (!ratings.length) return 0;
       return ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length;
     }
 
+    function getFallbackRating(data) {
+      const scrapedAverageRating = Number(data.scrapedAverageRating);
+      if (Number.isFinite(scrapedAverageRating) && scrapedAverageRating > 0) return scrapedAverageRating;
+
+      return getReviewAverageRating(data.reviews);
+    }
+
     function getDisplayRating(data) {
+      const currentReviewAverage = getReviewAverageRating(data.reviews);
+      if (currentReviewAverage > 0) return currentReviewAverage;
+
       const businessInfo = data.businessInfo || {};
       const businessStars = Number(businessInfo.stars);
       if (Number.isFinite(businessStars) && businessStars > 0) return businessStars;
@@ -451,7 +457,7 @@
               <div class="company-domain">${bi.domain || data.company || ''}</div>
             </div>
             <div class="trust-score">
-              <span class="score">${toSafeNumber(bi.trustScore, displayRating).toFixed(1)}</span><span class="max">/ 5</span>
+              <span class="score">${toSafeNumber(displayRating).toFixed(1)}</span><span class="max">/ 5</span>
             </div>
             <div>${starsHtml(displayRating)}</div>
           </div>
@@ -607,9 +613,6 @@
       const rows = buildImportRows(successfulResults);
       if (!rows.length) return;
 
-      const confirmed = window.confirm(`确认导入到生成？\n\n将提交 ${successfulResults.length} 个站点、${rows.length} 条评论到批量新增接口。`);
-      if (!confirmed) return;
-
       const importBtn = document.getElementById('importBtn');
       const successEl = document.getElementById('success');
       const errorEl = document.getElementById('error');
@@ -620,7 +623,7 @@
       errorEl.classList.add('hidden');
 
       try {
-        const res = await fetch(CMS_BATCH_URL, {
+        const res = await fetch('/api/import/batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(rows)

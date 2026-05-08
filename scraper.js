@@ -115,8 +115,7 @@ async function fetchPageWithBrowser(page, company, pageNumber, dateFilter = "all
         waitUntil: "domcontentloaded",
       });
 
-      await page.waitForLoadState("networkidle").catch(() => {});
-      await sleep(2500);
+      await sleep(500);
 
       const html = await page.content();
 
@@ -392,7 +391,7 @@ async function scrape(company) {
 
 // 纯数据抓取，返回结构化结果（供 Web 服务调用）
 async function scrapeData(company, maxPages = 0, dateFilter = "all", onProgress, starFiltersInput = []) {
-  const delay = 1500;
+  const delay = 500;
   const normalizedDateFilter = normalizeDateFilter(dateFilter);
   const onProgressFn = typeof onProgress === "function" ? onProgress : null;
   const starFilters = normalizeStarFilters(Array.isArray(onProgress) ? onProgress : starFiltersInput);
