@@ -39,6 +39,15 @@ function normalizeDateFilter(dateFilter) {
   return VALID_DATE_FILTERS.has(dateFilter) ? dateFilter : "all";
 }
 
+function normalizeStarFilters(starFilters = []) {
+  const stars = Array.isArray(starFilters) ? starFilters : [starFilters];
+  return [...new Set(
+    stars
+      .map((star) => parseInt(star, 10))
+      .filter((star) => Number.isInteger(star) && star >= 1 && star <= 5)
+  )].sort((a, b) => b - a);
+}
+
 function buildReviewUrl(company, pageNumber, dateFilter = "all") {
   const url = new URL(`${BASE_URL}/${company}`);
   const normalizedDateFilter = normalizeDateFilter(dateFilter);
@@ -148,7 +157,7 @@ function extractNextData(html) {
   return JSON.parse(match[1]);
 }
 
-function parseBusinessInfo(businessUnit) {
+function parseBusinessInfo(businessUnit = {}) {
   return {
     name: businessUnit.displayName,
     domain: businessUnit.identifyingName,
@@ -236,6 +245,25 @@ function parseReview(review) {
     replyText: review.reply?.message || null,
     replyDate: review.reply?.publishedDate || null,
     likes: review.likes || 0,
+  };
+}
+
+function summarizeReviewRatings(reviews) {
+  const counts = { "5 星": 0, "4 星": 0, "3 星": 0, "2 星": 0, "1 星": 0, "总计": 0 };
+  let ratingSum = 0;
+
+  for (const review of reviews) {
+    const rating = Number(review.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) continue;
+
+    counts[`${rating} 星`] += 1;
+    counts["总计"] += 1;
+    ratingSum += rating;
+  }
+
+  return {
+    distribution: counts,
+    average: counts["总计"] > 0 ? ratingSum / counts["总计"] : 0,
   };
 }
 
@@ -363,9 +391,11 @@ async function scrape(company) {
 }
 
 // 纯数据抓取，返回结构化结果（供 Web 服务调用）
-async function scrapeData(company, maxPages = 0, dateFilter = "all", onProgress) {
+async function scrapeData(company, maxPages = 0, dateFilter = "all", onProgress, starFiltersInput = []) {
   const delay = 1500;
   const normalizedDateFilter = normalizeDateFilter(dateFilter);
+  const onProgressFn = typeof onProgress === "function" ? onProgress : null;
+  const starFilters = normalizeStarFilters(Array.isArray(onProgress) ? onProgress : starFiltersInput);
   const session = await createBrowserSession();
 
   try {
@@ -382,7 +412,7 @@ async function scrapeData(company, maxPages = 0, dateFilter = "all", onProgress)
     const pagesToScrape = maxPages > 0 ? Math.min(maxPages, totalPages) : totalPages;
 
     const allReviews = (pageProps.reviews || []).map(parseReview);
-    if (onProgress) onProgress(1, pagesToScrape, allReviews.length);
+    if (onProgressFn) onProgressFn(1, pagesToScrape, allReviews.length);
 
     for (let page = 2; page <= pagesToScrape; page++) {
       await sleep(delay);
@@ -391,21 +421,30 @@ async function scrapeData(company, maxPages = 0, dateFilter = "all", onProgress)
         const data = extractNextData(html);
         const reviews = (data.props.pageProps.reviews || []).map(parseReview);
         allReviews.push(...reviews);
-        if (onProgress) onProgress(page, pagesToScrape, allReviews.length);
+        if (onProgressFn) onProgressFn(page, pagesToScrape, allReviews.length);
       } catch (_) {}
     }
+
+    const filteredReviews = starFilters.length
+      ? allReviews.filter((review) => starFilters.includes(review.rating))
+      : allReviews;
+    const scrapedRatingSummary = summarizeReviewRatings(allReviews);
 
     return {
       businessInfo,
       starDistribution,
+      scrapedStarDistribution: scrapedRatingSummary.distribution,
+      scrapedAverageRating: scrapedRatingSummary.average,
       languageDistribution,
       overviewData,
       scrapedAt: new Date().toISOString(),
       dateFilter: normalizedDateFilter,
+      starFilters,
       totalPages,
       pagesToScrape,
-      totalReviews: allReviews.length,
-      reviews: allReviews,
+      totalReviews: filteredReviews.length,
+      totalReviewsBeforeStarFilter: allReviews.length,
+      reviews: filteredReviews,
     };
   } finally {
     await session.browser.close();

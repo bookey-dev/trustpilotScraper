@@ -17,6 +17,12 @@
     .search-bar select { padding: 12px 36px 12px 16px; border: 2px solid #ddd; border-radius: 8px; font-size: 15px; outline: none; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23666' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 12px center; -webkit-appearance: none; -moz-appearance: none; appearance: none; cursor: pointer; transition: border-color 0.2s; }
     .search-bar select:focus { border-color: #00b67a; }
     .search-bar button { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 600; transition: opacity 0.2s; }
+    .filter-chip-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; min-height: 48px; border: 2px solid #ddd; border-radius: 8px; background: #fff; }
+    .filter-chip-label { font-size: 13px; color: #666; font-weight: 600; }
+    .filter-chip { position: relative; }
+    .filter-chip input { position: absolute; opacity: 0; pointer-events: none; }
+    .filter-chip span { display: inline-flex; align-items: center; justify-content: center; min-width: 50px; padding: 6px 10px; border-radius: 999px; background: #f0f2f5; color: #555; font-size: 13px; font-weight: 600; border: 1px solid transparent; cursor: pointer; transition: all 0.2s; }
+    .filter-chip input:checked + span { background: #e6f9f0; color: #00b67a; border-color: #00b67a; }
     .btn-primary { background: #00b67a; color: #fff; }
     .btn-primary:hover { opacity: 0.9; }
     .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -101,6 +107,7 @@
     .pagination button:hover:not(.active) { border-color: #00b67a; }
 
     .error { text-align: center; padding: 40px; color: #ff3722; font-size: 16px; }
+    .success { text-align: center; padding: 14px 16px; margin-bottom: 20px; border-radius: 10px; background: #e6f9f0; color: #0f8f63; font-size: 14px; }
     .hidden { display: none; }
   </style>
 </head>
@@ -112,22 +119,31 @@
       <input type="text" id="companyInput" placeholder="输入公司域名，多个用逗号分隔，如: www.amazon.com, www.ebay.com" value="www.velliavey.eu,www.velliavey.ca,www.velliavey.com.au,www.velliavey.uk,www.velliavey.com">
       <select id="maxPages">
         <option value="1">1 页</option>
-        <option value="3">3 页</option>
-        <option value="5" selected>5 页</option>
+        <option value="3" selected>3 页</option>
+        <option value="5">5 页</option>
         <option value="10">10 页</option>
         <option value="20">20 页</option>
         <option value="0">全部</option>
       </select>
       <select id="dateFilter">
-        <option value="all" selected>全部时间</option>
-        <option value="last30days">最近 30 天</option>
+        <option value="all">全部时间</option>
+        <option value="last30days" selected>最近 30 天</option>
         <option value="last3months">最近 3 个月</option>
         <option value="last6months">最近 6 个月</option>
         <option value="last12months">最近 12 个月</option>
       </select>
+      <div class="filter-chip-group">
+        <span class="filter-chip-label">星级</span>
+        <label class="filter-chip"><input type="checkbox" name="stars" value="5" checked><span>5 星</span></label>
+        <label class="filter-chip"><input type="checkbox" name="stars" value="4" checked><span>4 星</span></label>
+        <label class="filter-chip"><input type="checkbox" name="stars" value="3"><span>3 星</span></label>
+        <label class="filter-chip"><input type="checkbox" name="stars" value="2"><span>2 星</span></label>
+        <label class="filter-chip"><input type="checkbox" name="stars" value="1"><span>1 星</span></label>
+      </div>
       <button class="btn-primary" id="scrapeBtn" onclick="startScrape()">开始抓取</button>
       <button class="btn-secondary" id="csvBtn" onclick="downloadCSV()" style="display:none">下载全部 CSV</button>
       <button class="btn-secondary" id="jsonBtn" onclick="downloadJSON()" style="display:none">下载全部 JSON</button>
+      <button class="btn-secondary" id="importBtn" onclick="importToGenerate()" style="display:none">导入到生成</button>
     </div>
 
     <div id="loading" class="loading hidden">
@@ -136,6 +152,7 @@
     </div>
 
     <div id="error" class="error hidden"></div>
+    <div id="success" class="success hidden"></div>
     <div id="results"></div>
   </div>
 
@@ -144,10 +161,12 @@
     let currentCompanyIndex = 0;
     const REVIEWS_PER_PAGE = 20;
     const MAX_CONCURRENT_COMPANIES = 2;
+    const CMS_BATCH_URL = 'https://cms.velliavey.com/stage-api/trustpilot_data/batch';
     let reviewPages = {};
 
     function starsHtml(rating) {
-      return '<span class="stars-display">' + '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating)) + '</span>';
+      const safeRating = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+      return '<span class="stars-display">' + '★'.repeat(safeRating) + '☆'.repeat(5 - safeRating) + '</span>';
     }
 
     function formatDate(dateStr) {
@@ -161,6 +180,99 @@
 
     function getSuccessfulResults() {
       return allResults.filter((item) => item && !item.error);
+    }
+
+    function getSelectedStars() {
+      return Array.from(document.querySelectorAll('input[name="stars"]:checked'))
+        .map((input) => Number(input.value))
+        .filter((value) => Number.isInteger(value))
+        .sort((a, b) => b - a);
+    }
+
+    function starFilterLabel(stars) {
+      return stars.length ? `${stars.join('、')} 星` : '全部星级';
+    }
+
+    function toSafeNumber(value, fallback = 0) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : fallback;
+    }
+
+    function getFallbackRating(data) {
+      const scrapedAverageRating = Number(data.scrapedAverageRating);
+      if (Number.isFinite(scrapedAverageRating) && scrapedAverageRating > 0) return scrapedAverageRating;
+
+      const ratings = (data.reviews || [])
+        .map((review) => Number(review.rating))
+        .filter((rating) => Number.isFinite(rating) && rating >= 1 && rating <= 5);
+      if (!ratings.length) return 0;
+      return ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length;
+    }
+
+    function getDisplayRating(data) {
+      const businessInfo = data.businessInfo || {};
+      const businessStars = Number(businessInfo.stars);
+      if (Number.isFinite(businessStars) && businessStars > 0) return businessStars;
+
+      const trustScore = Number(businessInfo.trustScore);
+      if (Number.isFinite(trustScore) && trustScore > 0) return trustScore;
+
+      return getFallbackRating(data);
+    }
+
+    function getStarDistributionRows(data) {
+      const starDistribution = data.starDistribution || {};
+      const scrapedStarDistribution = data.scrapedStarDistribution || {};
+      const reviews = data.reviews || [];
+      const fallbackCounts = [5, 4, 3, 2, 1].reduce((counts, star) => {
+        const scrapedCount = Number(scrapedStarDistribution[`${star} 星`]);
+        counts[star] = Number.isFinite(scrapedCount)
+          ? scrapedCount
+          : reviews.filter((review) => Number(review.rating) === star).length;
+        return counts;
+      }, {});
+
+      const rows = [5, 4, 3, 2, 1].map((star) => {
+        const key = `${star} 星`;
+        const rawCount = starDistribution[key];
+        const count = Number.isFinite(Number(rawCount)) ? Number(rawCount) : fallbackCounts[star];
+        return { label: key, count, className: `star-${star}` };
+      });
+
+      const explicitTotal = Number(starDistribution['总计']);
+      const summedTotal = rows.reduce((sum, row) => sum + row.count, 0);
+      const scrapedTotal = Number(scrapedStarDistribution['总计']);
+      const total = Number.isFinite(explicitTotal) && explicitTotal > 0
+        ? explicitTotal
+        : (Number.isFinite(scrapedTotal) && scrapedTotal > 0 ? scrapedTotal : summedTotal);
+      return { rows, total };
+    }
+
+    function buildImportRows(results) {
+      return results.flatMap((result) => {
+        const businessInfo = result.businessInfo || {};
+        return (result.reviews || []).map((review) => ({
+          domain: businessInfo.domain || result.company || '',
+          createTimeMs: Date.now(),
+          dataId: review.id || '',
+          title: review.title || '',
+          text: review.text || '',
+          rating: Number.isFinite(Number(review.rating)) ? Number(review.rating) : 0,
+          language: review.language || '',
+          publishedDate: review.publishedDate || '',
+          experiencedDate: review.experiencedDate || '',
+          consumerName: review.consumerName || '',
+          consumerAvatar: review.consumerAvatar || '',
+          consumerCountry: review.consumerCountry || '',
+          consumerReviewCount: Number.isFinite(Number(review.consumerReviewCount)) ? Number(review.consumerReviewCount) : 0,
+          isVerified: Boolean(review.isVerified),
+          verificationSource: review.verificationSource || '',
+          source: review.source || '',
+          replyText: review.replyText || '',
+          replyDate: review.replyDate || '',
+          likes: Number.isFinite(Number(review.likes)) ? Number(review.likes) : 0,
+        }));
+      });
     }
 
     function getExportBaseName(successfulResults) {
@@ -247,27 +359,36 @@
       const companies = input.split(/[,，]/).map(s => s.trim()).filter(Boolean);
       const maxPages = document.getElementById('maxPages').value;
       const dateFilter = document.getElementById('dateFilter').value;
+      const stars = getSelectedStars();
 
       document.getElementById('scrapeBtn').disabled = true;
       document.getElementById('loading').classList.remove('hidden');
       document.getElementById('error').classList.add('hidden');
+      document.getElementById('success').classList.add('hidden');
       document.getElementById('results').innerHTML = '';
       document.getElementById('csvBtn').style.display = 'none';
       document.getElementById('jsonBtn').style.display = 'none';
+      document.getElementById('importBtn').style.display = 'none';
       allResults = [];
       reviewPages = {};
       currentCompanyIndex = 0;
 
       const concurrency = Math.min(MAX_CONCURRENT_COMPANIES, companies.length);
-      document.getElementById('loadingText').textContent = `正在抓取 0/${companies.length}，并发 ${concurrency} 个，时间 ${dateFilterLabel(dateFilter)}...`;
+      document.getElementById('loadingText').textContent = `正在抓取 0/${companies.length}，并发 ${concurrency} 个，时间 ${dateFilterLabel(dateFilter)}，星级 ${starFilterLabel(stars)}...`;
 
       allResults = await runConcurrentTasks(
         companies,
         concurrency,
         async (company) => {
-          document.getElementById('loadingText').textContent = `正在抓取 ${company}... 当前并发 ${concurrency} 个，时间 ${dateFilterLabel(dateFilter)}`;
+          document.getElementById('loadingText').textContent = `正在抓取 ${company}... 当前并发 ${concurrency} 个，时间 ${dateFilterLabel(dateFilter)}，星级 ${starFilterLabel(stars)}`;
           try {
-            const res = await fetch(`/api/scrape?company=${encodeURIComponent(company)}&maxPages=${maxPages}&date=${encodeURIComponent(dateFilter)}`);
+            const query = new URLSearchParams({
+              company,
+              maxPages,
+              date: dateFilter,
+            });
+            if (stars.length) query.set('stars', stars.join(','));
+            const res = await fetch(`/api/scrape?${query.toString()}`);
             if (!res.ok) {
               const err = await res.json();
               throw new Error(err.error || `HTTP ${res.status}`);
@@ -278,7 +399,7 @@
           }
         },
         (completed, total, company) => {
-          document.getElementById('loadingText').textContent = `已完成 ${completed}/${total}: ${company}，时间 ${dateFilterLabel(dateFilter)}`;
+          document.getElementById('loadingText').textContent = `已完成 ${completed}/${total}: ${company}，时间 ${dateFilterLabel(dateFilter)}，星级 ${starFilterLabel(stars)}`;
         }
       );
 
@@ -310,6 +431,7 @@
       const successfulResults = getSuccessfulResults();
       document.getElementById('csvBtn').style.display = successfulResults.length ? '' : 'none';
       document.getElementById('jsonBtn').style.display = successfulResults.length ? '' : 'none';
+      document.getElementById('importBtn').style.display = successfulResults.length ? '' : 'none';
       const data = allResults[currentCompanyIndex];
       if (data.error) {
         container.innerHTML += `<div class="error">抓取失败: ${data.error}</div>`;
@@ -317,27 +439,28 @@
       }
 
       const bi = data.businessInfo;
-      const sd = data.starDistribution;
       const ld = data.languageDistribution;
+      const displayRating = getDisplayRating(data);
 
       // 公司概览
-      const total = sd ? sd['总计'] : bi.numberOfReviews;
       container.innerHTML += `
         <div class="overview-card">
           <div class="company-header">
             <div>
-              <div class="company-name">${bi.name}</div>
-              <div class="company-domain">${bi.domain}</div>
+              <div class="company-name">${bi.name || data.company || ''}</div>
+              <div class="company-domain">${bi.domain || data.company || ''}</div>
             </div>
             <div class="trust-score">
-              <span class="score">${bi.trustScore}</span><span class="max">/ 5</span>
+              <span class="score">${toSafeNumber(bi.trustScore, displayRating).toFixed(1)}</span><span class="max">/ 5</span>
             </div>
-            <div>${starsHtml(bi.stars)}</div>
+            <div>${starsHtml(displayRating)}</div>
           </div>
           <div class="meta-info">
-            <div class="meta-item"><strong>${bi.numberOfReviews.toLocaleString()}</strong> 条评论</div>
+            <div class="meta-item"><strong>${toSafeNumber(bi.numberOfReviews).toLocaleString()}</strong> 条评论</div>
             <div class="meta-item"><strong>${data.totalReviews}</strong> 条已抓取</div>
             <div class="meta-item"><strong>时间范围:</strong> ${dateFilterLabel(data.dateFilter)}</div>
+            <div class="meta-item"><strong>星级筛选:</strong> ${starFilterLabel(data.starFilters || [])}</div>
+            ${typeof data.totalReviewsBeforeStarFilter === 'number' && data.starFilters?.length ? `<div class="meta-item"><strong>筛选前:</strong> ${data.totalReviewsBeforeStarFilter} 条</div>` : ''}
             ${bi.websiteUrl ? `<div class="meta-item"><a href="${bi.websiteUrl}" target="_blank">${bi.websiteUrl}</a></div>` : ''}
             ${bi.address ? `<div class="meta-item">${bi.address}</div>` : ''}
             <div class="meta-item"><span class="badge ${bi.isClaimed ? 'badge-green' : 'badge-gray'}">${bi.isClaimed ? '已认领' : '未认领'}</span></div>
@@ -348,14 +471,14 @@
 
       // 星级 + 语言
       let statsHtml = '<div class="stats-grid">';
-      if (sd) {
-        const entries = [['5 星', sd['5 星'], 'star-5'], ['4 星', sd['4 星'], 'star-4'], ['3 星', sd['3 星'], 'star-3'], ['2 星', sd['2 星'], 'star-2'], ['1 星', sd['1 星'], 'star-1']];
+      {
+        const { rows, total } = getStarDistributionRows(data);
         statsHtml += '<div class="stat-card"><h3>星级分布</h3>';
-        entries.forEach(([label, count, cls]) => {
-          const pct = ((count / total) * 100).toFixed(1);
+        rows.forEach(({ label, count, className }) => {
+          const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
           statsHtml += `<div class="star-row">
             <span class="star-label">${label}</span>
-            <div class="star-bar-bg"><div class="star-bar ${cls}" style="width:${pct}%"></div></div>
+            <div class="star-bar-bg"><div class="star-bar ${className}" style="width:${pct}%"></div></div>
             <span class="star-count">${count.toLocaleString()} (${pct}%)</span>
           </div>`;
         });
@@ -401,10 +524,11 @@
 
       let revHtml = `<div class="reviews-section"><h3>评论详情 (${reviews.length} 条)</h3>`;
       pageReviews.forEach(r => {
+        const reviewRating = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
         revHtml += `<div class="review-card">
           <div class="review-header">
             <div>
-              <span class="review-stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>
+              <span class="review-stars">${'★'.repeat(reviewRating)}${'☆'.repeat(5 - reviewRating)}</span>
               ${r.isVerified ? '<span class="verified-badge">已验证</span>' : ''}
             </div>
             <span class="review-date">${formatDate(r.publishedDate)}</span>
@@ -475,6 +599,52 @@
       };
       const json = JSON.stringify(payload, null, 2);
       triggerDownload(json, `${filename}.json`, 'application/json;charset=utf-8;');
+    }
+
+    async function importToGenerate() {
+      const successfulResults = getSuccessfulResults();
+      if (!successfulResults.length) return;
+      const rows = buildImportRows(successfulResults);
+      if (!rows.length) return;
+
+      const confirmed = window.confirm(`确认导入到生成？\n\n将提交 ${successfulResults.length} 个站点、${rows.length} 条评论到批量新增接口。`);
+      if (!confirmed) return;
+
+      const importBtn = document.getElementById('importBtn');
+      const successEl = document.getElementById('success');
+      const errorEl = document.getElementById('error');
+
+      importBtn.disabled = true;
+      importBtn.textContent = '导入中...';
+      successEl.classList.add('hidden');
+      errorEl.classList.add('hidden');
+
+      try {
+        const res = await fetch(CMS_BATCH_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(rows)
+        });
+        const text = await res.text();
+        let payload = {};
+        try {
+          payload = text ? JSON.parse(text) : {};
+        } catch (_) {
+          payload = { raw: text };
+        }
+        if (!res.ok || payload.code === 401 || payload.code === 403) {
+          throw new Error(payload.message || payload.msg || `导入失败: HTTP ${res.status}`);
+        }
+        successEl.textContent = `导入完成：${successfulResults.length} 个站点，${rows.length} 条评论已提交到批量新增接口。`;
+        successEl.classList.remove('hidden');
+      } catch (err) {
+        errorEl.textContent = err.message || '导入失败';
+        errorEl.classList.remove('hidden');
+      } finally {
+        importBtn.disabled = false;
+        importBtn.textContent = '导入到生成';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     }
   </script>
 </body>
