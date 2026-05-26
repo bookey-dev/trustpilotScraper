@@ -6,8 +6,8 @@ const { scrapeData, toCSV } = require("./scraper");
 const app = express();
 const PORT = process.env.PORT || 4008;
 const SCRAPE_CACHE_TTL_MS = 10 * 60 * 1000;
-const DEFAULT_MAX_PAGES = 3;
-const DEFAULT_DATE_FILTER = "last30days";
+const DEFAULT_MAX_PAGES = 0;
+const DEFAULT_DATE_FILTER = "all";
 const CMS_BATCH_URL = process.env.CMS_BATCH_URL || "https://cms.velliavey.com/prod-api/trustpilot_data/batch";
 const scrapeCache = new Map();
 
@@ -26,6 +26,11 @@ function normalizeStarFilters(starFilters) {
       .map((value) => parseInt(value, 10))
       .filter((value) => Number.isInteger(value) && value >= 1 && value <= 5)
   )].sort((a, b) => b - a);
+}
+
+function normalizeMaxPages(maxPages) {
+  const parsed = parseInt(maxPages, 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_MAX_PAGES;
 }
 
 function buildCacheKey(company, maxPages, dateFilter, starFilters) {
@@ -49,7 +54,7 @@ async function getScrapeDataCached(company, maxPages, dateFilter, starFilters) {
 // API: 抓取公司数据
 app.get("/api/scrape", async (req, res) => {
   const company = (req.query.company || "").trim();
-  const maxPages = parseInt(req.query.maxPages, 10) || DEFAULT_MAX_PAGES;
+  const maxPages = normalizeMaxPages(req.query.maxPages);
   const dateFilter = (req.query.date || DEFAULT_DATE_FILTER).trim();
   const starFilters = normalizeStarFilters(req.query.stars);
 
@@ -72,7 +77,7 @@ app.get("/api/scrape", async (req, res) => {
 // API: 下载 CSV
 app.get("/api/download/csv", async (req, res) => {
   const company = (req.query.company || "").trim();
-  const maxPages = parseInt(req.query.maxPages, 10) || DEFAULT_MAX_PAGES;
+  const maxPages = normalizeMaxPages(req.query.maxPages);
   const dateFilter = (req.query.date || DEFAULT_DATE_FILTER).trim();
   const starFilters = normalizeStarFilters(req.query.stars);
 
@@ -94,7 +99,7 @@ app.get("/api/download/csv", async (req, res) => {
 // API: 下载 JSON
 app.get("/api/download/json", async (req, res) => {
   const company = (req.query.company || "").trim();
-  const maxPages = parseInt(req.query.maxPages, 10) || DEFAULT_MAX_PAGES;
+  const maxPages = normalizeMaxPages(req.query.maxPages);
   const dateFilter = (req.query.date || DEFAULT_DATE_FILTER).trim();
   const starFilters = normalizeStarFilters(req.query.stars);
 
